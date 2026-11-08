@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Now Playing</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Intel+One+Mono:wght@300;400&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f6f4ee;--g:#6f8f6f;--y:#f1c232;--box:180px;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0d120e}}
+:root[data-theme="dark"]{--bg:#0d120e}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+html,body{height:100%;overflow:hidden}
+body{margin:0;box-sizing:border-box;background:var(--bg);color:var(--g);font:300 clamp(11px,min(2.3vw,4.2vh),18px)/1.35 "Intel One Mono",ui-monospace,Menlo,Consolas,monospace;display:flex;align-items:center;gap:4vw;padding:12px 4vw}
+.art{flex:none;box-sizing:border-box;width:var(--box);height:var(--box);border:1px solid var(--g);display:flex;align-items:center;justify-content:center;overflow:hidden}
+#art{margin:0;line-height:1.2;white-space:pre;transition:opacity .6s}
+.info{flex:1;min-width:0;display:flex;flex-direction:column;gap:.55em}
+.label{opacity:.75;font-size:.85em}
+.dot{color:var(--y);animation:b 1.6s infinite}
+@keyframes b{50%{opacity:.25}}
+.title{color:var(--y);font-weight:400;font-size:1.5em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar{white-space:pre;overflow:hidden}
+.time{display:flex;justify-content:space-between;font-size:.85em;opacity:.8}
+.y{color:var(--y)}
+button{align-self:flex-start;margin-top:.4em;background:none;border:0;padding:0;color:var(--g);font:inherit;cursor:pointer}
+button:hover:not(:disabled){color:var(--y)}
+button:disabled{opacity:.45;cursor:default}
+</style>
+</head>
+<body>
+<div class="art"><pre id="art" aria-hidden="true"></pre></div>
+<div class="info">
+  <div class="label" id="label">connecting…</div>
+  <div class="title" id="title">·</div>
+  <div class="sub" id="sub"></div>
+  <div class="bar" id="bar"></div>
+  <div class="time"><span id="t1"></span><span id="t2"></span></div>
+  <button id="btn" disabled>[ ... ]</button>
+</div>
+<script>
+const USER = "nil", KEY = "nil";
+const $ = id => document.getElementById(id);
+const art = $("art"), bar = $("bar"), btn = $("btn");
+const fmt = s => { s = Math.max(0, Math.round(s)); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
+const ago = u => { const m = Math.round((Date.now() / 1000 - u) / 60); return m < 1 ? "just now" : m < 60 ? m + "m ago" : m < 1440 ? Math.round(m / 60) + "h ago" : Math.round(m / 1440) + "d ago"; };
+
+let cur = null, state = { playing: false, start: 0, dur: 0, uts: 0, preview: null };
+let audio = null, previewing = false, charW = 8;
+// - change const user to ur last.fm username, then key to ur last.fm api key. -
+  
+// - layout -
+const W = 26, H = 13;
+function fit() {
+  const box = Math.max(80, Math.min(innerHeight - 24, innerWidth * 0.4));
+  document.documentElement.style.setProperty("--box", box + "px");
+  art.style.fontSize = Math.min(box / (W * 0.602), box / (H * 1.2)) * 0.95 + "px";
+  const m = document.createElement("span");
+  m.textContent = "0000000000"; m.style.cssText = "position:absolute;visibility:hidden";
+  bar.appendChild(m); charW = m.getBoundingClientRect().width / 10; m.remove();
+}
+fit(); addEventListener("resize", fit); document.fonts && document.fonts.ready.then(fit);
+
+// - ascii music notes -
+const SPR = [["  |\\", "  | ", " o| "], [" .---.", " |   |", "o_  o_"]];
+const P = Array.from({ length: 6 }, (_, i) => ({
+  s: SPR[i % 2], x: Math.random() * (W - 7), y: Math.random() * (H + 3),
+  v: 0.12 + Math.random() * 0.18, ph: Math.random() * 6, hot: i === 0
+}));
+const wrap = (s, k) => k ? `<span class="${k}">${s}</span>` : s;
+function drawArt(t, speed) {
+  const g = Array.from({ length: H }, () => Array(W).fill(" "));
+  const c = Array.from({ length: H }, () => Array(W).fill(""));
+  for (const p of P) {
+    p.y -= p.v * speed;
+    if (p.y < -4) { p.y = H; p.x = Math.random() * (W - 7); }
+    const ox = Math.round(p.x + Math.sin(t * 1.3 + p.ph) * 2), oy = Math.round(p.y);
+    p.s.forEach((row, j) => [...row].forEach((ch, i) => {
+      const X = ox + i, Y = oy + j;
+      if (ch !== " " && X >= 0 && X < W && Y >= 0 && Y < H) { g[Y][X] = ch; c[Y][X] = p.hot ? "y" : "g"; }
+    }));
+  }
+  art.innerHTML = g.map((row, j) => {
+    let o = "", run = "", k = c[j][0];
+    row.forEach((ch, i) => { if (c[j][i] !== k) { o += wrap(run, k); run = ""; k = c[j][i]; } run += ch; });
+    return o + wrap(run, k);
+  }).join("\n");
+}
+
+// - progress bar -
+// - note last.fm doesn't have information about progress so this bar only ever starts when the user comes to ur site, and will reset for reload/switch pages -
+function drawBar(frac) {
+  const inner = Math.max(4, Math.floor(bar.clientWidth / charW) - 3);
+  const n = Math.round(Math.min(1, frac) * inner);
+  bar.innerHTML = `[<span class="y">${"=".repeat(Math.max(0, n - 1))}${n > 0 ? ">" : ""}</span>${"-".repeat(inner - n)}]`;
+}
+
+let last = 0;
+function tick(now) {
+  requestAnimationFrame(tick);
+  if (now - last < 50) return; last = now;
+  const active = state.playing || previewing;
+  drawArt(now / 1000, active ? 1 : 0.25);
+  art.style.opacity = active ? 1 : 0.5;
+  let frac = 0, a = "", b = "";
+  if (previewing && audio) {
+    const d = audio.duration || 30; frac = audio.currentTime / d; a = fmt(audio.currentTime); b = fmt(d) + " preview";
+  } else if (state.playing) {
+    const el = (Date.now() - state.start) / 1000;
+    frac = state.dur ? el / state.dur : 0; a = fmt(el); b = state.dur ? fmt(state.dur) : "--:--";
+  } else { a = state.uts ? ago(state.uts) : ""; b = state.dur ? fmt(state.dur) : ""; }
+  drawBar(frac); $("t1").textContent = a; $("t2").textContent = b;
+}
+requestAnimationFrame(tick);
+
+// - data -
+async function j(u) { const r = await fetch(u); if (!r.ok) throw 0; return r.json(); }
+const api = (m, p) => j(`https://ws.audioscrobbler.com/2.0/?method=${m}&api_key=${KEY}&format=json&${p}`);
+
+async function lookup(artist, name, id) {
+  const [i, p] = await Promise.allSettled([
+    api("track.getinfo", `artist=${encodeURIComponent(artist)}&track=${encodeURIComponent(name)}&autocorrect=1`),
+    j(`https://itunes.apple.com/search?media=music&entity=song&limit=5&term=${encodeURIComponent(artist + " " + name)}`)
+  ]);
+  if (id !== cur) return;
+  const hit = p.status === "fulfilled" ? p.value.results.find(r => r.previewUrl) : null;
+  let dur = i.status === "fulfilled" ? (+(i.value.track && i.value.track.duration) || 0) / 1000 : 0;
+  if (!dur && hit) dur = hit.trackTimeMillis / 1000;
+  state.dur = dur; state.preview = hit ? hit.previewUrl : null;
+  btn.disabled = !state.preview; btn.textContent = state.preview ? "[ > preview ]" : "[ no preview ]";
+}
+
+async function poll() {
+  try {
+    const d = await api("user.getrecenttracks", `user=${USER}&limit=1`);
+    let tr = d.recenttracks.track; tr = Array.isArray(tr) ? tr[0] : tr;
+    if (!tr) throw 0;
+    const playing = !!(tr["@attr"] && tr["@attr"].nowplaying === "true");
+    const name = tr.name, artist = tr.artist["#text"] || tr.artist.name, album = tr.album && tr.album["#text"];
+    const id = artist + "|" + name;
+    if (id !== cur) {
+      cur = id; stopPreview();
+      state = { playing, start: Date.now(), dur: 0, uts: +(tr.date && tr.date.uts) || 0, preview: null };
+      $("title").textContent = name; $("sub").textContent = artist + (album ? " · " + album : "");
+      btn.disabled = true; btn.textContent = "[ ... ]";
+      lookup(artist, name, id);
+    } else {
+      if (playing && !state.playing) state.start = Date.now();
+      state.playing = playing; if (!playing && tr.date) state.uts = +tr.date.uts;
+    }
+    $("label").innerHTML = playing ? '<span class="dot">●</span> now playing' : "last played";
+  } catch (e) {
+    if (!cur) {
+      cur = "demo"; state = { playing: true, start: Date.now() - 72000, dur: 225, uts: 0, preview: null };
+      $("label").innerHTML = '<span class="dot">●</span> demo';
+      $("title").textContent = "couldn’t reach last.fm";
+      $("sub").textContent = "this'll work once it’s embedded on your site";
+      btn.textContent = "[ no preview ]";
+    }
+  }
+}
+
+// - preview -
+function stopPreview() { if (audio) audio.pause(); audio = null; previewing = false; }
+btn.onclick = () => {
+  if (previewing) { stopPreview(); btn.textContent = "[ > preview ]"; return; }
+  if (!state.preview) return;
+  audio = new Audio(state.preview); audio.volume = 0.7;
+  audio.onended = () => { stopPreview(); btn.textContent = "[ > preview ]"; };
+  audio.play().then(() => { previewing = true; btn.textContent = "[ || stop ]"; }).catch(stopPreview);
+};
+
+poll(); setInterval(poll, 15000);
+</script>
+</body>
+</html>
