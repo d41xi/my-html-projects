@@ -1,7 +1,6 @@
 # my-html-projects
 ## info
-welcome! this is just a repository where i larp being a programmer and store my ascii creations coded purely in html
-i wanted to put these embeds, most seen in my personal site, so anyone interested can check out the code, study how they're put together, or use them
+welcome! this is just a repository where i larp being a programmer and store my ascii creations coded purely in html. i wanted to put these embeds, most seen in my personal site, so anyone interested can check out the code, study how they're put together, or use them
 
 ## rules for using
 this project is licensed under the **mit license**. in short;
